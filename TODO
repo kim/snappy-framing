@@ -1,0 +1,3 @@
+- support non-4-byte-aligned bytes in CRC32C
+- split CRC32C into it's own library?
+- robust streaming
