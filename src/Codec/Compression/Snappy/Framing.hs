@@ -16,6 +16,7 @@ module Codec.Compression.Snappy.Framing
 
     -- * Utility functions
     , checksum
+    , verify
     ) where
 
 import Control.Applicative
@@ -134,21 +135,12 @@ toChunks = go . split
     min_comp x = B.length x >= minCompressible
 
 -- | Concatenate a list of 'Chunk's into a lazy 'ByteString'.
---
--- Each 'Chunk''s checksum is verified against the actual 'checksum' of it's
--- data. A checksum verification failure is an error.
 fromChunks :: [Chunk] -> BL.ByteString
-fromChunks = foldl (\ bs c -> bs <> unchunk c) BL.empty
+fromChunks = BL.concat . map unchunk
   where
-    unchunk (Compressed   chk d) = BL.fromStrict $ verify chk (Snappy.decompress d)
-    unchunk (Uncompressed chk d) = BL.fromStrict $ verify chk d
-    unchunk _ = BL.empty
-
-    verify chk bs =
-        let chk' = checksum bs
-         in if chk /= chk'
-                then error $ "crc mismatch: " ++ show chk ++ " /= " ++ show chk'
-                else bs
+    unchunk (Compressed   _ d) = BL.fromStrict $ Snappy.decompress d
+    unchunk (Uncompressed _ d) = BL.fromStrict d
+    unchunk _                  = BL.empty
 
 -- | 'toChunks' the input and concatenate the result, prepended by a stream
 -- identifier.
@@ -165,9 +157,33 @@ decode :: BL.ByteString -> BL.ByteString
 decode = fromChunks . decodeChunks
 
 -- | Decode a previously 'encode'd stream into 'Chunk's
+--
+-- Decoding stops in case of a decoding error, a checksum verification failure,
+-- or an 'Unskippable' chunk header. Note that compressed 'Chunk's are
+-- decompressed on the fly.
 decodeChunks :: BL.ByteString -> [Chunk]
-decodeChunks = go . pushChunks (runGetIncremental (get :: Get Chunk))
+decodeChunks = go [] . feed
   where
-    go (Done r _ val)   = val : if B.null r then [] else decodeChunks (BL.fromChunks [r])
-    go (Fail _ pos err) = error $ "fack: " ++ show pos ++ ": " ++ err
-    go (Partial k)      = go (k Nothing)
+    go acc (Done rest _ chunk) =
+        let acc' = maybe acc (:acc) (verify chunk)
+         in if B.null rest then acc' else go acc' (feed $ BL.fromChunks [rest])
+
+    go acc (Fail _ _ _) = acc
+    go acc (Partial k)  = go acc (k Nothing)
+
+    feed = pushChunks (runGetIncremental (get :: Get Chunk))
+
+-- | Verify a 'Chunk'
+--
+-- Returns 'Nothing' if the input is an 'Unskippable' chunk, or the checksum
+-- verification fails (if the input is a 'Compressed' or 'Uncompressed' chunk).
+-- Otherwise, the input 'Chunk' is returned in a 'Just'. Note that 'Compressed'
+-- chunks are deompressed into 'Uncompressed' chunks on the fly.
+verify :: Chunk -> Maybe Chunk
+verify u@(Uncompressed chk d) = if chk == checksum d then Just u else Nothing
+verify (Compressed chk d)     = if ok then Just (Uncompressed chk d') else Nothing
+  where
+    d' = Snappy.decompress d
+    ok = chk == checksum d'
+verify (Unskippable _)        = Nothing
+verify c                      = Just c
