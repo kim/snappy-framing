@@ -10,6 +10,7 @@ module Codec.Compression.Snappy.Framing
     , decode
     , decodeChunks
     , encode
+    , encodeChunks
     , fromChunks
     , toChunks
 
@@ -152,7 +153,12 @@ fromChunks = foldl (\ bs c -> bs <> unchunk c) BL.empty
 -- | 'toChunks' the input and concatenate the result, prepended by a stream
 -- identifier.
 encode :: BL.ByteString -> BL.ByteString
-encode bs = BL.concat $ map Binary.encode (StreamIdentifier : toChunks bs)
+encode bs = Binary.encode StreamIdentifier <> encodeChunks bs
+
+-- | Like 'encode', but don't prepend the stream identifier. Useful for
+-- incremental encoding.
+encodeChunks :: BL.ByteString -> BL.ByteString
+encodeChunks bs = BL.concat $ map Binary.encode (toChunks bs)
 
 -- | Decode a previously 'encode'd stream
 decode :: BL.ByteString -> BL.ByteString
@@ -160,9 +166,8 @@ decode = fromChunks . decodeChunks
 
 -- | Decode a previously 'encode'd stream into 'Chunk's
 decodeChunks :: BL.ByteString -> [Chunk]
-decodeChunks bs =
-    let res = pushChunks (runGetIncremental (get :: Get Chunk)) bs
-     in case res of
-            Done r _ val   -> val : if B.null r then [] else decodeChunks (BL.fromChunks [r])
-            Fail _ pos err -> error $ "fack: " ++ show pos ++ ": " ++ err
-            Partial _      -> error "wtfpartial"
+decodeChunks = go . pushChunks (runGetIncremental (get :: Get Chunk))
+  where
+    go (Done r _ val)   = val : if B.null r then [] else decodeChunks (BL.fromChunks [r])
+    go (Fail _ pos err) = error $ "fack: " ++ show pos ++ ": " ++ err
+    go (Partial k)      = go (k Nothing)
