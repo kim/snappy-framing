@@ -1,33 +1,41 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Codec.Compression.Snappy.Framing
-    ( -- * Constants
-      streamStart
-    , maxUncompressed
-    , minCompressible
+-- |
+-- Module      : Codec.Compression.Snappy.Framing
+-- Copyright   : (c) 2013 Kim Altintop <kim.altintop@gmail.com>
+-- License     : This Source Code Form is subject to the terms of
+--               the Mozilla Public License, v. 2.0.
+--               A copy of the MPL can be found in the LICENSE file or
+--               you can obtain it at http://mozilla.org/MPL/2.0/.
+-- Maintainer  : Kim Altintop <kim.altintop@gmail.com>
+-- Stability   : experimental
+-- Portability : non-portable (GHC extensions)
+--
 
-    -- * Encoding and Decoding
+module Codec.Compression.Snappy.Framing
+    ( -- * Encoding and Decoding
+      encode
+    , encode'
     , decode
-    , decodeChunks
-    , encode
-    , encodeChunks
-    , fromChunks
-    , toChunks
+    , decode'
+    , decodeVerify
+    , decodeVerify'
+    , decodeM
+    , decodeVerifyM
 
     -- * Utility functions
     , checksum
+    , streamIdentifier
     , verify
     ) where
 
 import Control.Applicative
-import Data.ByteString          (ByteString)
-import Data.Binary              (Binary(..))
+import Data.ByteString     (ByteString)
+import Data.Binary         (Binary(..))
 import Data.Binary.Get
 import Data.Binary.Put
 import Data.Bits
 import Data.Digest.CRC32C
-import Data.Int
-import Data.Monoid
 import Data.Word
 
 import qualified Data.Binary              as Binary
@@ -49,35 +57,25 @@ data Chunk = StreamIdentifier
 streamStart :: [Word8]
 streamStart = [0xff, 0x06, 0x00, 0x00, 0x73, 0x4e, 0x61, 0x50, 0x70, 0x59]
 
-maxUncompressed :: Int64
+maxUncompressed :: Int
 maxUncompressed = 65536
 
 minCompressible :: Int
 minCompressible = 18
 
 instance Binary Chunk where
-    put StreamIdentifier = mapM_ put streamStart
-    put (Compressed chk dat) = do
-        putWord8 0x00
-        putData chk dat
-    put (Uncompressed chk dat) = do
-        putWord8 0x01
-        putData chk dat
-    put (Skippable x)   = put x
-    put (Unskippable x) = put x
+    put StreamIdentifier       = mapM_ put streamStart
+    put (Compressed   chk dat) = putWord8 0x00 >> putData chk dat
+    put (Uncompressed chk dat) = putWord8 0x01 >> putData chk dat
+    put (Skippable    x)       = put x
+    put (Unskippable  x)       = put x
 
     get = do
         chunktype <- getWord8
         case chunktype of
-            0xff -> do
-                _ <- skip (length streamStart - 1)
-                return StreamIdentifier
-            0x00 -> do
-                (chk,dat) <- getData
-                return $ Compressed chk dat
-            0x01 -> do
-                (chk,dat) <- getData
-                return $ Uncompressed chk dat
+            0xff -> skip (length streamStart - 1) >> return StreamIdentifier
+            0x00 -> return . uncurry Compressed   =<< getData
+            0x01 -> return . uncurry Uncompressed =<< getData
             x | x >= 0x02 && x <= 0x7f -> return $ Unskippable x
               | x >= 0x80 && x <= 0xfe -> return $ Skippable x
               | otherwise -> error "junk chunk type"
@@ -117,68 +115,12 @@ checksum a =
         masked = ((chksum `shiftR` 15) .|. (chksum `shiftL` 17)) + 0xa282ead8
      in masked
 
--- | Split the input into a stream of 'Chunk's
---
--- The input is split into chunks of max 'maxUncompressed' bytes. If a chunk is
--- larger than 'minCompressible' bytes it is compressed, otherwise an
--- uncompressed 'Chunk' is created.
-toChunks :: BL.ByteString -> [Chunk]
-toChunks = go . split
-  where
-    go (x,xs) = chunk (BL.toStrict x) : if BL.null xs then [] else go (split xs)
-
-    chunk c | min_comp c = Compressed (checksum c) (Snappy.compress c)
-            | otherwise  = Uncompressed (checksum c) c
-
-    split = BL.splitAt maxUncompressed
-
-    min_comp x = B.length x >= minCompressible
-
--- | Concatenate a list of 'Chunk's into a lazy 'ByteString'.
-fromChunks :: [Chunk] -> BL.ByteString
-fromChunks = BL.concat . map unchunk
-  where
-    unchunk (Compressed   _ d) = BL.fromStrict $ Snappy.decompress d
-    unchunk (Uncompressed _ d) = BL.fromStrict d
-    unchunk _                  = BL.empty
-
--- | 'toChunks' the input and concatenate the result, prepended by a stream
--- identifier.
-encode :: BL.ByteString -> BL.ByteString
-encode bs = Binary.encode StreamIdentifier <> encodeChunks bs
-
--- | Like 'encode', but don't prepend the stream identifier. Useful for
--- incremental encoding.
-encodeChunks :: BL.ByteString -> BL.ByteString
-encodeChunks bs = BL.concat $ map Binary.encode (toChunks bs)
-
--- | Decode a previously 'encode'd stream
-decode :: BL.ByteString -> BL.ByteString
-decode = fromChunks . decodeChunks
-
--- | Decode a previously 'encode'd stream into 'Chunk's
---
--- Decoding stops in case of a decoding error, a checksum verification failure,
--- or an 'Unskippable' chunk header. Note that compressed 'Chunk's are
--- decompressed on the fly.
-decodeChunks :: BL.ByteString -> [Chunk]
-decodeChunks = go [] . feed
-  where
-    go acc (Done rest _ chunk) =
-        let acc' = maybe acc (:acc) (verify chunk)
-         in if B.null rest then acc' else go acc' (feed $ BL.fromChunks [rest])
-
-    go acc (Fail _ _ _) = acc
-    go acc (Partial k)  = go acc (k Nothing)
-
-    feed = pushChunks (runGetIncremental (get :: Get Chunk))
-
 -- | Verify a 'Chunk'
 --
 -- Returns 'Nothing' if the input is an 'Unskippable' chunk, or the checksum
 -- verification fails (if the input is a 'Compressed' or 'Uncompressed' chunk).
 -- Otherwise, the input 'Chunk' is returned in a 'Just'. Note that 'Compressed'
--- chunks are deompressed into 'Uncompressed' chunks on the fly.
+-- chunks are decompressed into 'Uncompressed' chunks on the fly.
 verify :: Chunk -> Maybe Chunk
 verify u@(Uncompressed chk d) = if chk == checksum d then Just u else Nothing
 verify (Compressed chk d)     = if ok then Just (Uncompressed chk d') else Nothing
@@ -187,3 +129,122 @@ verify (Compressed chk d)     = if ok then Just (Uncompressed chk d') else Nothi
     ok = chk == checksum d'
 verify (Unskippable _)        = Nothing
 verify c                      = Just c
+
+-- | Yield a stream identifier (start-of-stream marker)
+streamIdentifier :: BL.ByteString
+streamIdentifier = Binary.encode StreamIdentifier
+
+-- | Encode a lazy 'BL.ByteString' into a 'Chunk'
+--
+-- If the input is longer than 'minCompressible' bytes, the resulting chunk is
+-- 'Compressed' otherwise 'Uncompressed'. If the input size exceeds
+-- 'maxUncompressed' bytes, the leftover input is returned in a 'Just'.
+encode :: BL.ByteString -> (Chunk, Maybe BL.ByteString)
+encode = go . split
+  where
+    go (x,xs) = (chunk $ BL.toStrict x, leftover' xs)
+
+    chunk c
+      | shouldCompress c = Compressed   (checksum c) (Snappy.compress c)
+      | otherwise        = Uncompressed (checksum c) c
+
+    split = BL.splitAt (fromIntegral maxUncompressed)
+
+    leftover' x
+      | BL.null x = Nothing
+      | otherwise = Just x
+
+-- | Encode a strict 'ByteString' into a 'Chunk'
+--
+-- If the input is longer than 'minCompressible' bytes, the resulting chunk is
+-- 'Compressed' otherwise 'Uncompressed'. If the input size exceeds
+-- 'maxUncompressed' bytes, the leftover input is returned in a 'Just'.
+encode' :: ByteString -> (Chunk, Maybe ByteString)
+encode' = go . split
+  where
+    go (x,xs) = (chunk x, leftover xs)
+
+    chunk c
+      | shouldCompress c = Compressed   (checksum c) (Snappy.compress c)
+      | otherwise        = Uncompressed (checksum c) c
+
+    split = B.splitAt maxUncompressed
+
+
+type Error = (ByteOffset, String)
+
+-- | Decode a lazy 'BL.ByteString' into a 'Chunk'
+decode :: BL.ByteString -> (Either Error Chunk, Maybe ByteString)
+decode = dec . feed
+
+-- | Decode a lazy 'BL.ByteString' into a 'Chunk' and 'verify' the result
+decodeVerify :: BL.ByteString -> (Either Error Chunk, Maybe ByteString)
+decodeVerify = decV . feed
+
+-- | Decode a strict 'ByteString' into a 'Chunk'
+decode' :: ByteString -> (Either Error Chunk, Maybe ByteString)
+decode' = dec . feed'
+
+-- | Decode a strict 'ByteString' into a 'Chunk' and 'verify' the result
+decodeVerify' :: ByteString -> (Either Error Chunk, Maybe ByteString)
+decodeVerify' = decV . feed'
+
+-- | Decode drawing input from the given monadic action as needed
+decodeM :: Monad m
+        => m (Maybe ByteString)
+        -- ^ And action that will be run to provide input. If it returns
+        -- 'Nothing' it is assumed no more input is available.
+        -> m (Either Error Chunk, Maybe ByteString)
+        -- ^ Either a parse error or a 'Chunk', along with leftovers if any.
+decodeM pull = go (runGetIncremental (get :: Get Chunk))
+  where
+    go (Partial k)  = go . k =<< pull
+    go (Fail r n m) = return (Left (n, m), leftover r)
+    go (Done r _ c) = return (Right c,     leftover r)
+
+-- | Like 'decodeM', but 'verify' the result
+decodeVerifyM :: Monad m
+              => m (Maybe ByteString)
+              -> m (Either Error Chunk, Maybe ByteString)
+decodeVerifyM pull = go (runGetIncremental (get :: Get Chunk))
+  where
+    go (Partial k)  = go . k =<< pull
+    go (Fail r n m) = return (Left (n, m), leftover r)
+    go (Done r n c) = case verify c of
+                          Just c' -> return (Right c', leftover r)
+                          Nothing -> go (Fail r n "verification failure")
+
+--
+-- Internal
+--
+
+shouldCompress :: ByteString -> Bool
+shouldCompress x = B.length x >= minCompressible
+{-# INLINEABLE shouldCompress #-}
+
+feed :: BL.ByteString -> Decoder Chunk
+feed = pushChunks $ runGetIncremental get
+{-# INLINEABLE feed #-}
+
+feed' :: ByteString -> Decoder Chunk
+feed' = pushChunk $ runGetIncremental get
+{-# INLINEABLE feed' #-}
+
+dec :: Decoder Chunk -> (Either Error Chunk, Maybe ByteString)
+dec (Partial k)  = dec (k Nothing)
+dec (Fail r n m) = (Left (n, m), leftover r)
+dec (Done r _ c) = (Right c,     leftover r)
+{-# INLINEABLE dec #-}
+
+decV :: Decoder Chunk -> (Either Error Chunk, Maybe ByteString)
+decV (Partial k)  = decV (k Nothing)
+decV (Fail r n m) = (Left (n, m), leftover r)
+decV (Done r n c) = case verify c of
+                        Just c' -> (Right c', leftover r)
+                        Nothing -> decV (Fail r n "verification failure")
+{-# INLINEABLE decV #-}
+leftover :: ByteString -> Maybe ByteString
+leftover x
+  | B.null x  = Nothing
+  | otherwise = Just x
+{-# INLINEABLE leftover #-}
