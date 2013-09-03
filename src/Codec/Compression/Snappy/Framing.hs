@@ -243,6 +243,7 @@ decV (Done r n c) = case verify c of
                         Just c' -> (Right c', leftover r)
                         Nothing -> decV (Fail r n "verification failure")
 {-# INLINEABLE decV #-}
+
 leftover :: ByteString -> Maybe ByteString
 leftover x
   | B.null x  = Nothing
