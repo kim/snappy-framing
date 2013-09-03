@@ -16,6 +16,7 @@ module Codec.Compression.Snappy.Framing
     ( -- * Exported Types
       Checksum
     , Chunk (..)
+    , Error
 
     -- * Encoding and Decoding
     , encode
