@@ -1,5 +1,5 @@
 name:                snappy-framing
-version:             0.0.0
+version:             0.1.0
 synopsis:            Snappy Framing Format in Haskell
 homepage:            https://github.com/kim/snappy-framing
 license:             OtherLicense
