@@ -13,8 +13,12 @@
 --
 
 module Codec.Compression.Snappy.Framing
-    ( -- * Encoding and Decoding
-      encode
+    ( -- * Exported Types
+      Checksum
+    , Chunk (..)
+
+    -- * Encoding and Decoding
+    , encode
     , encode'
     , decode
     , decode'
