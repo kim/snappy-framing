@@ -1,1 +1,2 @@
 language: haskell
+before_install: apt-get install libsnappy-dev
