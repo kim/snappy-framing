@@ -2,12 +2,13 @@ name:                snappy-framing
 version:             0.1.0
 synopsis:            Snappy Framing Format in Haskell
 homepage:            https://github.com/kim/snappy-framing
+bug-reports:         https://github.com/kim/snappy-framing/issues
 license:             OtherLicense
 license-file:        LICENSE
 author:              Kim Altintop
 maintainer:          kim.altintop@gmail.com
 copyright:           Copyright (c) 2013 Kim Altintop
-category:            Codec
+category:            Codec, Compression
 build-type:          Simple
 cabal-version:       >=1.10
 
