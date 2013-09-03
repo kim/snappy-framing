@@ -16,7 +16,7 @@ module Codec.Compression.Snappy.Framing
     ( -- * Exported Types
       Checksum
     , Chunk (..)
-    , Error
+    , DecodeError
 
     -- * Encoding and Decoding
     , encode
@@ -50,6 +50,8 @@ import qualified Codec.Compression.Snappy as Snappy
 
 
 type Checksum = Word32
+
+type DecodeError = (ByteOffset, String)
 
 data Chunk = StreamIdentifier
            | Compressed   !Checksum !ByteString
@@ -176,22 +178,20 @@ encode' = go . split
     split = B.splitAt maxUncompressed
 
 
-type Error = (ByteOffset, String)
-
 -- | Decode a lazy 'BL.ByteString' into a 'Chunk'
-decode :: BL.ByteString -> (Either Error Chunk, Maybe ByteString)
+decode :: BL.ByteString -> (Either DecodeError Chunk, Maybe ByteString)
 decode = dec . feed
 
 -- | Decode a lazy 'BL.ByteString' into a 'Chunk' and 'verify' the result
-decodeVerify :: BL.ByteString -> (Either Error Chunk, Maybe ByteString)
+decodeVerify :: BL.ByteString -> (Either DecodeError Chunk, Maybe ByteString)
 decodeVerify = decV . feed
 
 -- | Decode a strict 'ByteString' into a 'Chunk'
-decode' :: ByteString -> (Either Error Chunk, Maybe ByteString)
+decode' :: ByteString -> (Either DecodeError Chunk, Maybe ByteString)
 decode' = dec . feed'
 
 -- | Decode a strict 'ByteString' into a 'Chunk' and 'verify' the result
-decodeVerify' :: ByteString -> (Either Error Chunk, Maybe ByteString)
+decodeVerify' :: ByteString -> (Either DecodeError Chunk, Maybe ByteString)
 decodeVerify' = decV . feed'
 
 -- | Decode drawing input from the given monadic action as needed
@@ -199,7 +199,7 @@ decodeM :: Monad m
         => m (Maybe ByteString)
         -- ^ And action that will be run to provide input. If it returns
         -- 'Nothing' it is assumed no more input is available.
-        -> m (Either Error Chunk, Maybe ByteString)
+        -> m (Either DecodeError Chunk, Maybe ByteString)
         -- ^ Either a parse error or a 'Chunk', along with leftovers if any.
 decodeM pull = go (runGetIncremental (get :: Get Chunk))
   where
@@ -210,7 +210,7 @@ decodeM pull = go (runGetIncremental (get :: Get Chunk))
 -- | Like 'decodeM', but 'verify' the result
 decodeVerifyM :: Monad m
               => m (Maybe ByteString)
-              -> m (Either Error Chunk, Maybe ByteString)
+              -> m (Either DecodeError Chunk, Maybe ByteString)
 decodeVerifyM pull = go (runGetIncremental (get :: Get Chunk))
   where
     go (Partial k)  = go . k =<< pull
@@ -235,13 +235,13 @@ feed' :: ByteString -> Decoder Chunk
 feed' = pushChunk $ runGetIncremental get
 {-# INLINEABLE feed' #-}
 
-dec :: Decoder Chunk -> (Either Error Chunk, Maybe ByteString)
+dec :: Decoder Chunk -> (Either DecodeError Chunk, Maybe ByteString)
 dec (Partial k)  = dec (k Nothing)
 dec (Fail r n m) = (Left (n, m), leftover r)
 dec (Done r _ c) = (Right c,     leftover r)
 {-# INLINEABLE dec #-}
 
-decV :: Decoder Chunk -> (Either Error Chunk, Maybe ByteString)
+decV :: Decoder Chunk -> (Either DecodeError Chunk, Maybe ByteString)
 decV (Partial k)  = decV (k Nothing)
 decV (Fail r n m) = (Left (n, m), leftover r)
 decV (Done r n c) = case verify c of
