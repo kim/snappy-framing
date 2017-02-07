@@ -1,0 +1,7 @@
+resolver: ghc-7.10
+packages:
+- '.'
+extra-deps:
+- snappy-0.2.0.2
+flags: {}
+extra-package-dbs: []
