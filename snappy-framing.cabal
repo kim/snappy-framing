@@ -27,8 +27,7 @@ library
 
   hs-source-dirs:    src
 
-  ghc-options:      -Wall -fwarn-tabs -funbox-strict-fields
-  ghc-prof-options: -prof -auto-all
+  ghc-options:      -Wall -fwarn-tabs -funbox-small-strict-fields
 
   exposed-modules:   Codec.Compression.Snappy.Framing
                      Data.Digest.CRC32C
