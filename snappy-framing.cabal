@@ -3,7 +3,7 @@ version:             0.1.0
 synopsis:            Snappy Framing Format in Haskell
 homepage:            https://github.com/kim/snappy-framing
 bug-reports:         https://github.com/kim/snappy-framing/issues
-license:             OtherLicense
+license:             MPL-2.0
 license-file:        LICENSE
 author:              Kim Altintop
 maintainer:          kim.altintop@gmail.com
