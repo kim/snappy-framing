@@ -32,9 +32,9 @@ module Codec.Compression.Snappy.Framing
     , checksum
     , streamIdentifier
     , verify
-    ) where
+    )
+where
 
-import Control.Applicative
 import Data.ByteString     (ByteString)
 import Data.Binary         (Binary(..))
 import Data.Binary.Get
@@ -81,8 +81,8 @@ instance Binary Chunk where
         chunktype <- getWord8
         case chunktype of
             0xff -> skip (length streamStart - 1) >> return StreamIdentifier
-            0x00 -> return . uncurry Compressed   =<< getData
-            0x01 -> return . uncurry Uncompressed =<< getData
+            0x00 -> uncurry Compressed   <$> getData
+            0x01 -> uncurry Uncompressed <$> getData
             x | x >= 0x02 && x <= 0x7f -> return $ Unskippable x
               | x >= 0x80 && x <= 0xfe -> return $ Skippable x
               | otherwise -> error "junk chunk type"
