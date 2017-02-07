@@ -31,8 +31,7 @@ library
   ghc-prof-options: -prof -auto-all
 
   exposed-modules:   Codec.Compression.Snappy.Framing
-
-  other-modules:     Data.Digest.CRC32C
+                     Data.Digest.CRC32C
 
   build-depends:
       array       >= 0.4

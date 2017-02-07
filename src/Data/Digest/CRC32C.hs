@@ -1,3 +1,21 @@
+-- |
+-- Module      : Data.Digest.CRC32C
+-- Copyright   : (c) 2013 Kim Altintop <kim.altintop@gmail.com>, Edward Kmett (?)
+-- Maintainer  : Kim Altintop <kim.altintop@gmail.com>
+-- Stability   : stable
+-- Portability : non-portable (GHC extensions)
+--
+
+-- | Implementation of the CRC32C checksum algorithm.
+--
+-- The current implementation is in "pure" Haskell, thus does not take advantage
+-- of hardware implementations available on several CPU types. It's performance
+-- (throughput) is therefore possibly insufficient for certain classes of
+-- applications.
+--
+-- Attribution: it is believed that the code is, at least partly, based on an
+-- implementation by Edward Kmett, which has since vanished from the internet.
+--
 module Data.Digest.CRC32C
     ( crc32c
     , crc32c_update
@@ -24,15 +42,15 @@ step :: Word32 -> ByteString -> Word32
 step crc bs = B.foldl step' crc bs
   where
     step' acc b = let x = table !!! ((acc .&. 0xff) `xor` fromIntegral b)
-                    in x `xor` (acc `shiftR` 8)
-{-# INLINEABLE step #-}
+                   in x `xor` (acc `shiftR` 8)
+{-# INLINE step #-}
 
 (!!!) :: (IArray a e, Ix i, Integral i) => a i e -> i -> e
 arr !!! i = unsafeAt arr $ fromIntegral i
-{-# INLINEABLE (!!!) #-}
+{-# INLINE (!!!) #-}
 
 table :: UArray Word32 Word32
-table = listArray (0,255) $
+table = listArray (0,255)
     [ 0x00000000, 0xf26b8303, 0xe13b70f7, 0x1350f3f4
     , 0xc79a971f, 0x35f1141c, 0x26a1e7e8, 0xd4ca64eb
     , 0x8ad958cf, 0x78b2dbcc, 0x6be22838, 0x9989ab3b
