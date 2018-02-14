@@ -5,8 +5,7 @@
 -- Stability   : stable
 -- Portability : non-portable (GHC extensions)
 --
-
--- | Implementation of the CRC32C checksum algorithm.
+-- Implementation of the CRC32C checksum algorithm.
 --
 -- The current implementation is in "pure" Haskell, thus does not take advantage
 -- of hardware implementations available on several CPU types. It's performance
