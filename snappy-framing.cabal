@@ -1,5 +1,5 @@
 name:                snappy-framing
-version:             0.1.1
+version:             0.1.2
 synopsis:            Snappy Framing Format in Haskell
 homepage:            https://github.com/kim/snappy-framing
 bug-reports:         https://github.com/kim/snappy-framing/issues
