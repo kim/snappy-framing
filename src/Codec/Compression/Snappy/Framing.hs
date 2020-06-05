@@ -1,4 +1,3 @@
-{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 -- |
@@ -214,8 +213,8 @@ decodeVerify' = bimap strict strict . decodeVerify . BL.fromStrict
 decodeM
     :: Monad m
     => m (Maybe ByteString)
-    -- ^ And action that will be run to provide input. If it returns
-    -- 'Nothing' it is assumed no more input is available.
+    -- ^ An action that will be run to provide input. If it returns 'Nothing' it
+    -- is assumed no more input is available.
     -> m (Either (ByteString, ByteOffset, String)
                  (ByteString, ByteOffset, Chunk))
     -- ^ Either a parse error or a 'Chunk', along with leftovers if any.
